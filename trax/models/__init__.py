@@ -65,5 +65,7 @@ Policy = model_configure(rl.Policy)
 PolicyAndValue = model_configure(rl.PolicyAndValue)
 Value = model_configure(rl.Value)
 RNNLM = model_configure(rnn.RNNLM)
+GRULM = model_configure(rnn.GRULM)
+LSTMSeq2SeqAttn = model_configure(rnn.LSTMSeq2SeqAttn)
 PositionLookupTransformerLM = model_configure(
     position_lookup_transformer.PositionLookupTransformerLM)
