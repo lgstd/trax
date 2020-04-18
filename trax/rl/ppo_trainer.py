@@ -198,9 +198,9 @@ class PPO(policy_based_trainer.PolicyBasedTrainer):
     (log_probabs_traj, value_predictions_traj) = (
         self._policy_and_value_net_apply(
             (padded_observations, dummy_actions),
-            weights=self._policy_and_value_net_weights,
-            state=self._model_state,
-            rng=key,
+            w=self._policy_and_value_net_weights,
+            s=self._model_state,
+            r=key,
         ))
     # Cut off the last extra action to obtain shape (B, T, C, A).
     log_probabs_traj_cut = log_probabs_traj[:, :-1]
@@ -294,9 +294,9 @@ class PPO(policy_based_trainer.PolicyBasedTrainer):
       (log_probab_actions_new, _) = (
           self._policy_and_value_net_apply(
               (padded_observations, dummy_actions),
-              weights=self._policy_and_value_net_weights,
-              state=self._model_state,
-              rng=k2))
+              w=self._policy_and_value_net_weights,
+              s=self._model_state,
+              r=k2))
       # Cut off the last extra action to obtain shape (B, T, C, A).
       log_probab_actions_new_cut = log_probab_actions_new[:, :-1]
 

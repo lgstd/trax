@@ -82,8 +82,8 @@ class TransformerTest(parameterized.TestCase):
       next_sym = onp.zeros((batch_size, 1), dtype=onp.int32)
 
       for index in range(length):
-        logits_slow = model_slow(buf, rng=rng)
-        logits_fast = model_fast(next_sym, rng=rng)
+        logits_slow = model_slow(buf, r=rng)
+        logits_fast = model_fast(next_sym, r=rng)
         onp.testing.assert_array_almost_equal(
             logits_slow[:, index, :], logits_fast[:, 0, :],
             decimal=5,

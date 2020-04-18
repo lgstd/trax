@@ -321,9 +321,9 @@ class PpoTest(test.TestCase):
 
     # Just test that this computes at all.
     (new_log_probabs, value_predictions_new) = (
-        net((observations, actions), weights=new_params, state=state))
+        net((observations, actions), w=new_params, s=state))
     (old_log_probabs, value_predictions_old) = (
-        net((observations, actions), weights=old_params, state=state))
+        net((observations, actions), w=old_params, s=state))
 
     gamma = 0.99
     lambda_ = 0.95

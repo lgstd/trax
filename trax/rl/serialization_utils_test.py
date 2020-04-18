@@ -171,7 +171,7 @@ class SerializationTest(parameterized.TestCase):
     (inner_weights, inner_state) = map(
         serialization_utils.extract_inner_model, (weights, state)
     )
-    inner_model(np.array([[0]]), weights=inner_weights, state=inner_state)
+    inner_model(np.array([[0]]), w=inner_weights, s=inner_state)
 
   @parameterized.named_parameters(('raw', None), ('serialized', 32))
   def test_wrapped_policy_continuous(self, vocab_size):

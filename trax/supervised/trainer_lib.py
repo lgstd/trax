@@ -458,8 +458,7 @@ class Trainer(object):
       batch = _reshape_by_device(batch, self.n_devices)
     weights = self._opt_state[0][0]
     forward_computation = jax.xla_computation(self._model_predict_eval)(
-        batch, weights=weights, state=self._model_state[0],
-        rng=self._rngs[0])
+        batch, w=weights, s=self._model_state[0], r=self._rngs[0])
     with tf.io.gfile.GFile(os.path.join(output_dir, 'forward.txt'), 'w') as f:
       f.write(forward_computation.GetHloText())
     with tf.io.gfile.GFile(os.path.join(output_dir, 'forward.dot'), 'w') as f:
@@ -703,7 +702,7 @@ def _jit_update_fn(predict_fn, loss_fn, optimizer, n_devices, jit=True):
   model_and_loss = tl.Serial(predict_fn, loss_fn)
   # Gradients are always wrt. the first argument, so putting weights first.
   def model_and_loss_call(weights, batch, state, rng):
-    res = model_and_loss(batch, weights=weights, state=state, rng=rng)
+    res = model_and_loss(batch, w=weights, s=state, r=rng)
     return res, model_and_loss.state
   if n_devices == 1:  # TODO(lukaszkaiser): remove branch when not needed.
     def single_update(i, opt_state, batch, state, rng):

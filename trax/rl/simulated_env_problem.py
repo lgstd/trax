@@ -124,8 +124,7 @@ class SimulatedEnvProblem(env_problem.EnvProblem):
 
     def predict_fn(inputs, rng):
       (output, self._model_state) = self._model_predict(
-          inputs, weights=model_weights, state=self._model_state, rng=rng
-      )
+          inputs, w=model_weights, s=self._model_state, r=rng)
       return output
 
     self._predict_fn = predict_fn

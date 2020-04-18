@@ -124,7 +124,7 @@ class TraxTest(test.TestCase, parameterized.TestCase):
         unreplicate = lambda x: x[0]
         weights = math.nested_map(unreplicate, weights)
         state = math.nested_map(unreplicate, state)
-      model(next(inputs)[0], weights=weights, state=state)
+      model(next(inputs)[0], w=weights, s=state)
 
   @parameterized.parameters(BACKENDS)
   def test_train_eval_predict(self, backend_name):

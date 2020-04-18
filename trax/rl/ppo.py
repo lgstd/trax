@@ -428,9 +428,9 @@ def combined_loss(new_weights,
   (log_probab_actions_new, value_predictions_new) = (
       policy_and_value_net_apply(
           (padded_observations, dummy_actions),
-          weights=new_weights,
-          state=state,
-          rng=rng,
+          w=new_weights,
+          s=state,
+          r=rng,
       )
   )
   # Cut off the last extra action to obtain shape (B, T, C, A).

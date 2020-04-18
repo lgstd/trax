@@ -533,9 +533,8 @@ def run_policy_all_timesteps(
   )
   policy_input = (observations, dummy_actions)
   (rng, subrng) = trax_random.split(rng)
-  (log_probs, value_preds) = policy_and_value_net_apply(
-      policy_input, weights=weights, state=state, rng=subrng
-  )
+  (log_probs, value_preds) = (
+      policy_and_value_net_apply(policy_input, w=weights, s=state, r=subrng))
   return log_probs, value_preds, state, rng
 
 

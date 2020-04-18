@@ -120,7 +120,7 @@ class Layer(object):
     else:
       return '{}{{{}}}'.format(class_str, fields_str)
 
-  def __call__(self, x, **kwargs):
+  def __call__(self, x, w=None, s=None, r=None, n_accelerators=0):
     """Makes Layer instances callable; for use in tests or interactive settings.
 
     This convenience method helps library users play with, test, or otherwise
@@ -135,28 +135,28 @@ class Layer(object):
     Args:
       x: 0 or more input tensors, formatted the same as the inputs to
           Layer.forward.
-      **kwargs: Additional keyword arguments if needed/desired for this layer.
-          Three possible keyword arguments are especially relevant:
-            - weights=... will override any cached weights values
-            - state=... will override any cached state values
-            - rng=... will supply a PRNG key for use by the layer
+      w: Weights or None; if None, use self's cached weights value.
+      s: State or None; if None, use self's cached state value.
+      r: rng object or None; if None, use a default computed from a int 0 seed.
+      n_accelerators: Number of accelerators to target.
 
     Returns:
       0 or more output tensors, formatted the same as the outputs from
           Layer.forward.
     """
-    weights = kwargs.pop('weights', self.weights)
-    state = kwargs.pop('state', self.state)
-    rng = kwargs.pop('rng', self._rng)
+    weights = self.weights if w is None else w
+    state = self.state if s is None else s
+    rng = self._rng if r is None else r
     rng = math.random.get_prng(0) if rng is None else rng
-    forward = self.pure_fn
+
+    forward_w_s_r = self.pure_fn
     # TODO(lukaszkaiser): n_accelerators is experimental, to decide on API
-    n_accelerators = kwargs.pop('n_accelerators', 0)
     if n_accelerators:
       if n_accelerators not in self._jit_cache:
-        self._jit_cache[n_accelerators] = jit_forward(forward, n_accelerators)
-      forward = self._jit_cache[n_accelerators]
-    outputs, new_state = forward(x, weights, state, rng)
+        self._jit_cache[n_accelerators] = (
+            jit_forward(forward_w_s_r, n_accelerators))
+      forward_w_s_r = self._jit_cache[n_accelerators]
+    outputs, new_state = forward_w_s_r(x, weights, state, rng)
     self.state = new_state
     self.weights = weights
     return outputs
@@ -190,7 +190,7 @@ class Layer(object):
     raise NotImplementedError
 
   def forward_with_state(self, inputs, weights=EMPTY_WEIGHTS, state=EMPTY_STATE,
-                         **kwargs):
+                         rng=None):
     """Computes this layer's output as part of a forward pass through the model.
 
     Authors of new Layer subclasses should override this method to define the
@@ -208,8 +208,7 @@ class Layer(object):
           layer has sublayers. If a layer (or sublayer) has no trainable
           weights, the corresponding weights element is an empty tuple.
       state: Layer-specific non-parameter state that can update between batches.
-      **kwargs: Often empty; main current use is to carry a PRNG key for random
-          number generation, using the keyword 'rng'.
+      rng: Single-use random number generator (JAX PRNG key).
 
     Returns:
       A tuple of (tensors, state). The tensors match the number (n_out) promised
@@ -218,7 +217,8 @@ class Layer(object):
         - n_out = 1: one tensor (NOT wrapped in a tuple)
         - n_out > 1: a tuple of tensors, with n_out items
     """
-    del kwargs
+    # Default implementation only computes with inputs and weights.
+    del rng
     return self.forward(inputs, weights), state
 
   def new_weights(self, input_signature):
@@ -259,7 +259,7 @@ class Layer(object):
     """
     return False
 
-  def backward(self, inputs, output, grad, weights, state, new_state, **kwargs):
+  def backward(self, inputs, output, grad, weights, state, new_state, rng):
     """Custom backward pass to propagate gradients in a custom way.
 
     Args:
@@ -270,7 +270,7 @@ class Layer(object):
       weights: layer weights
       state: start state.
       new_state: end state computed by running the layer
-      **kwargs: kwargs for the layer
+      rng: Single-use random number generator (JAX PRNG key).
 
     Returns:
       The custom gradient signal for the input. Note that we need to return
@@ -290,9 +290,9 @@ class Layer(object):
     weight sharing to be implemented as layer sharing.
 
     Args:
-      input_signature: A `ShapeDtype` instance (if this layer takes one input)
-          or a list/tuple of `ShapeDtype` instances.
-      rng: A single-use random number generator (JAX PRNG key). If none is
+      input_signature: `ShapeDtype` instance (if this layer takes one input)
+          or list/tuple of `ShapeDtype` instances.
+      rng: Single-use random number generator (JAX PRNG key). If none is
           provided, a default rng based on the integer seed 0 will be used.
 
     Returns:
@@ -413,7 +413,7 @@ class Layer(object):
     self._state = state
 
   def pure_fn(self, x, weights, state, rng):
-    """Applies this layer as a pure function.
+    """Applies this layer as a pure function with no optional args.
 
     This method exposes the layer's computation as a pure function. This is
     esp. useful for JIT compilation. Do not override, use `forward` instead.
@@ -440,8 +440,8 @@ class Layer(object):
         self._weights = weights
 
       if not self.has_backward:
-        outputs, s = self.forward_with_state(
-            x, weights=weights, state=state, rng=rng)
+        outputs, s = (
+            self.forward_with_state(x, weights=weights, state=state, rng=rng))
       else:
         outputs, s = self._do_custom_gradients(x, weights, state, rng=rng)
       self._state = s
@@ -532,18 +532,16 @@ class Layer(object):
     if unreplicate_state:
       self.state = math.nested_map(self.state, lambda x: x[0])
 
-  def _do_custom_gradients(self, x, weights, state, **kwargs):
+  def _do_custom_gradients(self, x, weights, state, rng):
     """Calls this layer for a forward pass, but with custom gradients."""
     assert math.backend_name() == 'jax', (
         'Custom gradients are only supported in JAX for now.')
 
     # See this link for how custom transformations are defined in JAX:
     # https://jax.readthedocs.io/en/latest/jax.html#jax.custom_transforms
-    # Note that we capture the kwargs and don't calculate gradients wrt. them.
     @jax.custom_transforms
     def _do_forward(y, weights):
-      res = self.forward_with_state(
-          y, weights=weights, state=state, **kwargs)
+      res = self.forward_with_state(y, weights=weights, state=state, rng=rng)
       return res
 
     # This is the custom gradient (vector-jacobian product in JAX) function.
@@ -551,12 +549,11 @@ class Layer(object):
     # https://jax.readthedocs.io/en/latest/jax.html#jax.defjvp_all
     def do_forward_vjp(y, weights):
       """Custom gradient (vjp) function."""
-      output, new_state = self.forward_with_state(
-          y, weights=weights, state=state, **kwargs)
+      output, new_state = (
+          self.forward_with_state(y, weights=weights, state=state, rng=rng))
       def vjpfun(grad):
         grad = grad[0]  # Ignore dummy gradient wrt state.
-        res = self.backward(
-            y, output, grad, weights, state, new_state, **kwargs)
+        res = self.backward(y, output, grad, weights, state, new_state, rng)
         return res
       return (output, new_state), vjpfun
 
@@ -566,7 +563,7 @@ class Layer(object):
     return output, state
 
 
-def layer(n_in=1, n_out=1, new_weights_fn=None, name=None):
+def layer(n_in=1, n_out=1, name=None):
   """Returns a decorator that converts a function into a Layer class builder."""
 
   def _build_layer_class(raw_fn):
@@ -576,18 +573,13 @@ def layer(n_in=1, n_out=1, new_weights_fn=None, name=None):
       self._kwargs = kwargs  # pylint: disable=protected-access
       Layer.__init__(self, n_in=n_in, n_out=n_out, name=name)
 
-    def _forward(self, x, weights):
+    def _forward(self, inputs, weights):
       """Uses this layer as part of a forward pass through the model."""
-      _validate_forward_input(x, n_in)
-      raw_output = raw_fn(x, weights=weights, **self._kwargs)  # pylint: disable=protected-access
+      del weights
+      _validate_forward_input(inputs, n_in)
+      raw_output = raw_fn(inputs, **self._kwargs)  # pylint: disable=protected-access
       output = () if _is_empty(raw_output) else raw_output
       return output
-
-    def _new_weights(self, input_signature):
-      if new_weights_fn is None:
-        return EMPTY_WEIGHTS
-      kwargs = self._kwargs  # pylint: disable=protected-access
-      return new_weights_fn(input_signature, **kwargs)
 
     def _is_empty(raw_output):
       return raw_output is None or (isinstance(raw_output, (list, tuple))
@@ -595,12 +587,10 @@ def layer(n_in=1, n_out=1, new_weights_fn=None, name=None):
 
     # Set docstrings and create the class.
     _forward.__doc__ = raw_fn.__doc__
-    _new_weights.__doc__ = new_weights_fn.__doc__
     # Note: None.__doc__ is None
     cls = type(raw_fn.__name__, (Layer,),
                {'__init__': _init,
-                'forward': _forward,
-                'new_weights': _new_weights})
+                'forward': _forward})
     return cls
 
   return _build_layer_class
@@ -713,7 +703,7 @@ def check_shape_agreement(layer_obj, input_signature):
 
   rng1, rng2 = layer_obj.new_rngs(2)
   random_input = _random_values(input_signature, rng1)
-  call_output = layer_obj(random_input, weights=weights, state=state, rng=rng2)
+  call_output = layer_obj(random_input, w=weights, s=state, r=rng2)
   call_output_shape = _shapes(call_output)
 
   msg = '_foward_abstract shape output %s != __call__ output shape %s' % (
@@ -793,7 +783,7 @@ def _random_values(input_signature, rng):
   Args:
     input_signature: A `ShapeDtype` instance (if `layer_obj` takes one input)
         or a list/tuple of ShapeDtype instances.
-    rng: A random number generator.
+    rng: Single-use random number generator (JAX PRNG key).
 
   Returns:
     Random values with the shape and type specified.
